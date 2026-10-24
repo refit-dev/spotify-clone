@@ -6,6 +6,7 @@ import { Price, Product } from '@/types';
 
 import { stripe } from './stripe';
 import { toDateTime } from './helpers';
+import { getSubscriptionPeriodStart, getSubscriptionPeriodEnd } from './stripe-subscription-period';
 
 export const supabaseAdmin = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -34,9 +35,9 @@ const upsertPriceRecord = async (price: Stripe.Price) => {
     active: price.active,
     currency: price.currency,
     description: price.nickname ?? undefined,
-    type: price.type,
+    type: (price.type as Extract<Stripe.Price.Type, 'one_time' | 'recurring'>),
     unit_amount: price.unit_amount ?? undefined,
-    interval: price.recurring?.interval,
+    interval: (price.recurring?.interval as Extract<Stripe.Price.Recurring.Interval, 'day' | 'month' | 'week' | 'year'> | undefined),
     interval_count: price.recurring?.interval_count,
     trial_period_days: price.recurring?.trial_period_days,
     metadata: price.metadata
@@ -92,7 +93,7 @@ const copyBillingDetailsToCustomer = async (
     .from('users')
     .update({
       billing_address: { ...address },
-      payment_method: { ...payment_method[payment_method.type] }
+      payment_method: { ...payment_method[payment_method.type as Extract<Stripe.PaymentMethod.Type, keyof Stripe.PaymentMethod>] }
     })
     .eq('id', uuid);
   if (error) throw error;
@@ -136,10 +137,10 @@ const manageSubscriptionStatusChange = async (
         ? toDateTime(subscription.canceled_at).toISOString()
         : null,
       current_period_start: toDateTime(
-        subscription.current_period_start
+        (getSubscriptionPeriodStart(subscription, (items) => items[0]))
       ).toISOString(),
       current_period_end: toDateTime(
-        subscription.current_period_end
+        (getSubscriptionPeriodEnd(subscription, (items) => items[0]))
       ).toISOString(),
       created: toDateTime(subscription.created).toISOString(),
       ended_at: subscription.ended_at
